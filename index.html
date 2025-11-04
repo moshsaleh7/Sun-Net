@@ -459,7 +459,7 @@
     </div>
 
     <script>
-        // Firebase Configuration - আপনার দেওয়া কনফিগারেশন
+        // Firebase Configuration
         const firebaseConfig = {
             apiKey: "AIzaSyA9fFXPWffefF17n8KgcA6gFBGqo0kQwd8",
             authDomain: "sunnet-91692.firebaseapp.com",
@@ -496,10 +496,86 @@
         let dailyChart = null;
         let monthlyChart = null;
         let isOnline = true;
+        let appUsers = null;
 
         const monthNames = ['জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'];
 
-        // 🔥 Firebase Functions
+        // 🔥 Firebase Functions - Users Management
+        function syncUsersToFirebase() {
+            if (!currentUser || currentUser.role !== 'admin') {
+                console.log('❌ শুধুমাত্র অ্যাডমিন ইউজার ডাটা সিঙ্ক করতে পারবে');
+                return;
+            }
+            
+            console.log('🔄 ইউজার ডাটা Firebase-এ সিঙ্ক করা হচ্ছে...', appUsers);
+            
+            db.collection('appUsers').doc('usersData').set(appUsers)
+                .then(() => {
+                    console.log('✅ ইউজার ডাটা Firebase এ সফলভাবে সেভ হয়েছে!');
+                    showNotification('✅ ইউজার ডাটা সিঙ্ক হয়েছে!');
+                })
+                .catch((error) => {
+                    console.error('❌ Firebase Users Error:', error);
+                    showNotification('❌ ইউজার ডাটা সিঙ্ক করতে সমস্যা!');
+                });
+        }
+
+        function listenForUsersChanges() {
+            console.log('👂 Firebase থেকে ইউজার ডাটা শুনা শুরু হচ্ছে...');
+            
+            db.collection('appUsers').doc('usersData')
+                .onSnapshot((doc) => {
+                    if (doc.exists) {
+                        const firebaseUsers = doc.data();
+                        console.log('📥 Firebase থেকে ইউজার ডাটা পেয়েছে:', firebaseUsers);
+                        
+                        appUsers = firebaseUsers;
+                        
+                        // লোকাল স্টোরেজেও সেভ করুন
+                        localStorage.setItem('appUsers', JSON.stringify(appUsers));
+                        
+                        console.log('✅ ইউজার ডাটা আপডেট হয়েছে!');
+                    } else {
+                        console.log('📝 Firebase-এ কোনো ইউজার ডাটা নেই, ডিফল্ট ইউজার তৈরি করা হচ্ছে...');
+                        // যদি Firebase-এ কোনো ডাটা না থাকে, ডিফল্ট ইউজার তৈরি করুন
+                        initializeDefaultUsers();
+                    }
+                }, (error) => {
+                    console.error('❌ Firebase Users Listen Error:', error);
+                    // যদি Firebase কাজ না করে, লোকাল স্টোরেজ থেকে লোড করুন
+                    loadUsersFromLocalStorage();
+                });
+        }
+
+        function initializeDefaultUsers() {
+            console.log('🔧 ডিফল্ট ইউজার তৈরি করা হচ্ছে...');
+            appUsers = {
+                admin: { password: 'admin123', role: 'admin', name: 'অ্যাডমিন' },
+                viewer: { password: 'viewer123', role: 'viewer', name: 'ভিউয়ার' }
+            };
+            
+            // লোকাল স্টোরেজে সেভ করুন
+            localStorage.setItem('appUsers', JSON.stringify(appUsers));
+            
+            // Firebase-এ সিঙ্ক করুন
+            syncUsersToFirebase();
+            
+            console.log('✅ ডিফল্ট ইউজার তৈরি করা হয়েছে:', appUsers);
+        }
+
+        function loadUsersFromLocalStorage() {
+            console.log('📂 লোকাল স্টোরেজ থেকে ইউজার ডাটা লোড করা হচ্ছে...');
+            const saved = localStorage.getItem('appUsers');
+            if (saved) {
+                appUsers = JSON.parse(saved);
+                console.log('✅ লোকাল স্টোরেজ থেকে ইউজার ডাটা লোড হয়েছে:', appUsers);
+            } else {
+                console.log('❌ লোকাল স্টোরেজেও কোনো ইউজার ডাটা নেই, ডিফল্ট ইউজার তৈরি করা হচ্ছে...');
+                initializeDefaultUsers();
+            }
+        }
+
+        // 🔥 Firebase Functions - Business Data
         function syncDataToFirebase() {
             if (!currentUser || currentUser.role !== 'admin') return;
             
@@ -544,7 +620,7 @@
                         updateFilters();
                         
                         // শুধুমাত্র অন্য ইউজারের আপডেট হলে নোটিফিকেশন দেখান
-                        if (previousTransactionsCount !== transactions.length && currentUser.role === 'viewer') {
+                        if (previousTransactionsCount !== transactions.length && currentUser && currentUser.role === 'viewer') {
                             showNotification('🔄 ডাটা আপডেট হয়েছে!');
                         }
                         
@@ -650,28 +726,49 @@
             listenForDataChanges();
         }
 
-        // 🎯 Basic Functions
+        // 🎯 আপডেটেড ইউজার ম্যানেজমেন্ট ফাংশন
         function getUsers() {
-            const saved = localStorage.getItem('appUsers');
-            if (saved) {
-                return JSON.parse(saved);
+            console.log('🔍 ইউজার ডাটা চেক করা হচ্ছে...', appUsers);
+            
+            // যদি appUsers null হয়, তাহলে লোড করুন
+            if (!appUsers) {
+                loadUsersFromLocalStorage();
             }
-            return {
-                admin: { password: 'admin123', role: 'admin', name: 'অ্যাডমিন' },
-                viewer: { password: 'viewer123', role: 'viewer', name: 'ভিউয়ার' }
-            };
+            
+            return appUsers || initializeDefaultUsers();
         }
 
         function saveUsers(users) {
-            localStorage.setItem('appUsers', JSON.stringify(users));
+            console.log('💾 ইউজার ডাটা সেভ করা হচ্ছে...', users);
+            appUsers = users;
+            localStorage.setItem('appUsers', JSON.stringify(appUsers));
+            
+            // Firebase এ সিঙ্ক করুন
+            syncUsersToFirebase();
         }
 
         function init() {
-            const saved = localStorage.getItem('currentUser');
-            if (saved) {
-                currentUser = JSON.parse(saved);
-                showMainApp();
+            console.log('🚀 অ্যাপ্লিকেশন শুরু হচ্ছে...');
+            
+            // প্রথমে Firebase থেকে ইউজার ডাটা লোড করুন
+            listenForUsersChanges();
+            
+            // ব্যবসা ডাটা লোড করুন
+            loadData();
+            
+            // তারপর বর্তমান ইউজার চেক করুন
+            const savedUser = localStorage.getItem('currentUser');
+            if (savedUser) {
+                try {
+                    currentUser = JSON.parse(savedUser);
+                    console.log('👤 বর্তমান ইউজার:', currentUser);
+                    showMainApp();
+                } catch (error) {
+                    console.error('❌ ইউজার ডাটা পার্স করতে সমস্যা:', error);
+                    document.getElementById('loginScreen').style.display = 'block';
+                }
             } else {
+                console.log('❌ কোনো লগড-ইন ইউজার নেই');
                 document.getElementById('loginScreen').style.display = 'block';
             }
         }
@@ -682,11 +779,20 @@
             const password = document.getElementById('loginPassword').value;
             const users = getUsers();
 
-            if (users[username] && users[username].password === password) {
-                currentUser = { username, role: users[username].role, name: users[username].name };
+            console.log('🔐 লগইন চেষ্টা:', username);
+            console.log('📋 উপলব্ধ ইউজার:', users);
+
+            if (users && users[username] && users[username].password === password) {
+                currentUser = { 
+                    username, 
+                    role: users[username].role, 
+                    name: users[username].name 
+                };
                 localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                console.log('✅ লগইন সফল:', currentUser);
                 showMainApp();
             } else {
+                console.log('❌ লগইন ব্যর্থ:', username);
                 alert('❌ ভুল ইউজারনেম বা পাসওয়ার্ড!');
             }
         }
@@ -701,13 +807,13 @@
         }
 
         function showMainApp() {
+            console.log('🖥️ মেইন অ্যাপ দেখানো হচ্ছে...');
             document.getElementById('loginScreen').style.display = 'none';
             document.getElementById('mainApp').style.display = 'block';
             document.getElementById('currentUserName').textContent = currentUser.name;
             document.getElementById('currentUserRole').textContent = currentUser.role === 'admin' ? 'অ্যাডমিন' : 'ভিউয়ার';
             
             applyPermissions();
-            loadData();
             populateMonthDropdowns();
             updatePartnersDatalist();
             updateFilters();
@@ -722,12 +828,23 @@
             const isAdmin = currentUser.role === 'admin';
             const isViewer = currentUser.role === 'viewer';
             
+            console.log('🔒 পারমিশন প্রয়োগ করা হচ্ছে:', currentUser.role);
+            
             // Show/hide elements based on role
-            document.getElementById('txFormCard').style.display = isAdmin ? 'block' : 'none';
-            document.getElementById('addPartnerBtn').style.display = isAdmin ? 'block' : 'none';
-            document.getElementById('employeesTab').style.display = isAdmin ? 'block' : 'none';
-            document.getElementById('backupTab').style.display = isAdmin ? 'block' : 'none';
-            document.getElementById('settingsTab').style.display = isAdmin ? 'block' : 'none';
+            const elementsToControl = {
+                'txFormCard': isAdmin,
+                'addPartnerBtn': isAdmin,
+                'employeesTab': isAdmin,
+                'backupTab': isAdmin,
+                'settingsTab': isAdmin
+            };
+            
+            Object.keys(elementsToControl).forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.style.display = elementsToControl[id] ? 'block' : 'none';
+                }
+            });
             
             // Disable forms for viewer
             if (isViewer) {
@@ -1348,6 +1465,7 @@
             }
         }
 
+        // 🎯 আপডেটেড পাসওয়ার্ড পরিবর্তন ফাংশন
         function changeAdminPassword(e) {
             e.preventDefault();
             const currentPassword = document.getElementById('currentPassword').value;
@@ -1355,6 +1473,11 @@
             const confirmPassword = document.getElementById('confirmPassword').value;
             
             const users = getUsers();
+            
+            if (!users.admin) {
+                showAlert('settingsAlert', '❌ অ্যাডমিন ইউজার খুঁজে পাওয়া যায়নি!', 'danger');
+                return;
+            }
             
             if (users.admin.password !== currentPassword) {
                 showAlert('settingsAlert', '❌ বর্তমান পাসওয়ার্ড ভুল!', 'danger');
@@ -1366,10 +1489,17 @@
                 return;
             }
             
+            if (newPassword.length < 6) {
+                showAlert('settingsAlert', '❌ পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে!', 'danger');
+                return;
+            }
+            
             users.admin.password = newPassword;
             saveUsers(users);
             showAlert('settingsAlert', '✅ অ্যাডমিন পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে!', 'success');
             e.target.reset();
+            
+            console.log('🔑 অ্যাডমিন পাসওয়ার্ড পরিবর্তন করা হয়েছে:', newPassword);
         }
 
         function changeViewerPassword(e) {
@@ -1379,6 +1509,11 @@
             const confirmPassword = document.getElementById('confirmViewerPassword').value;
             
             const users = getUsers();
+            
+            if (!users.viewer) {
+                showAlert('viewerAlert', '❌ ভিউয়ার ইউজার খুঁজে পাওয়া যায়নি!', 'danger');
+                return;
+            }
             
             if (users.viewer.password !== currentPassword) {
                 showAlert('viewerAlert', '❌ বর্তমান ভিউয়ার পাসওয়ার্ড ভুল!', 'danger');
@@ -1390,10 +1525,17 @@
                 return;
             }
             
+            if (newPassword.length < 6) {
+                showAlert('viewerAlert', '❌ পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে!', 'danger');
+                return;
+            }
+            
             users.viewer.password = newPassword;
             saveUsers(users);
             showAlert('viewerAlert', '✅ ভিউয়ার পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে!', 'success');
             e.target.reset();
+            
+            console.log('🔑 ভিউয়ার পাসওয়ার্ড পরিবর্তন করা হয়েছে:', newPassword);
         }
 
         function showAlert(containerId, message, type) {
